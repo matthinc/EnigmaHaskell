@@ -92,12 +92,12 @@ applyRotorBlock letter rotors rotations initial rings ukw = (applyBackward . app
         applyBackward letter = applyRotors letter $ reverse (map reverseRotor modifiedRotors)
 
 -- | Encrypt text in the rotor block
-encryptTextInRotorBlock :: [Char]          -- ^ The input text
-            -> [([Char], Int)] -- ^ The rotors
-            -> [Int]           -- ^ The initial position
-            -> [Int]           -- ^ The rings
-            -> [Char]          -- ^ The UKW rotor
-            -> [Char]          -- ^ The encrypted result
+encryptTextInRotorBlock :: [Char] -- ^ The input text
+            -> [([Char], Int)]    -- ^ The rotors
+            -> [Int]              -- ^ The initial position
+            -> [Int]              -- ^ The rings
+            -> [Char]             -- ^ The UKW rotor
+            -> [Char]             -- ^ The encrypted result
 encryptTextInRotorBlock text rotors initial rings ukw = zipWith encryptNextLetter preparedText [1..length text]
   where encryptNextLetter letter position = applyRotorBlock letter rotorEncodings (calculateRotorPositions position) initial rings ukw
         preparedText = filter (\a -> elem a ['A'..'Z']) $ map toUpper text
@@ -109,12 +109,35 @@ encryptTextInRotorBlock text rotors initial rings ukw = zipWith encryptNextLette
         calculateRotorPositions max = foldl applyPositionChangeToPosition [0, 0, 0] [1..max]
         applyPositionChangeToPosition position change = zipWith (+) position (rotorPositionChange change position)
 
+-- | Apply plugboard permutatios to a text
+plugboard :: [Char] -- ^ Input text
+          -> [(Char, Char)] -- ^ Plugboard settings
+          -> [Char] -- ^ Output text
+plugboard text permutations = map applyAllPermutations text
+  where applyAllPermutations char = foldl applyPermutation char permutations
+        applyPermutation char perm
+          | fst perm == char = snd perm
+          | snd perm == char = fst perm
+          | otherwise        = char
+
+runEnigma :: [Char]            -- ^ The input text
+          -> [([Char], Int)]   -- ^ The rotors
+          -> [Int]             -- ^ The initial position
+          -> [Int]             -- ^ The rings
+          -> [Char]            -- ^ The UKW rotor
+          -> [(Char, Char)]    -- ^ Plugboard setting
+          -> [Char]            -- ^ The encrypted result
+runEnigma text rotors initial rings ukw plugboardPerm = plugboard outputFromRotors plugboardPerm
+  where outputFromRotors = encryptTextInRotorBlock pbText rotors initial rings ukw
+        pbText = plugboard text plugboardPerm
+
 main :: IO ()
 main = putStrLn $ show $ encryptedText
-  where encryptedText = encryptTextInRotorBlock plaintext rotorConfig initialRotation rings ukw
+  where encryptedText = runEnigma plaintext rotorConfig initialRotation rings ukw plubgoardConfig
         plaintext = "THISISATEST"
-        -- expected: cglltficygb
+        -- expected: SGLKAHGLWKL
         rotorConfig = [rotorI, rotorII, rotorIII]
         initialRotation = startWith1 [4, 7, 1]
         rings = startWith1 [2, 4, 8]
         ukw = ukwB
+        plubgoardConfig = [('T', 'A'), ('S', 'E'), ('M', 'K')]
