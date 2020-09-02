@@ -67,19 +67,26 @@ applyRotors letter rotors = foldl applyRotor letter rotors
 
 -- | 'Rotate' rotor
 rotateRotor :: Int -> [Char] -> [Char]
-rotateRotor amount rotor = shiftOutput $ take (length rotor) $ drop amount $ cycle rotor
-  where shiftOutput r = map shiftLetter r
-        shiftLetter l = (cycle alphabet) !! ((findPositionOfLetterInList l alphabet) + (26 - amount))
+rotateRotor amount rotor = shiftOutput $ take (length rotor) $ drop realAmount $ cycle rotor
+  where realAmount = amount `mod` 26 -- allows negative amounts (useful when working with rings > rotation)
+        shiftOutput r = map shiftLetter r
+        shiftLetter l = (cycle alphabet) !! ((findPositionOfLetterInList l alphabet) + (26 - realAmount))
+
+-- | [1, 1, 2] -> [0, 0, 1]
+startWith1 :: [Int] -> [Int]
+startWith1 arr = zipWith (-) arr (cycle [1])
 
 -- | Simulates the whole enigma rotor block
 applyRotorBlock :: Char     -- ^ The input letter
                 -> [[Char]] -- ^ The rotors
                 -> [Int]    -- ^ The rotation
-                -> [Int]    -- ^ The ring position
+                -> [Int]    -- ^ The initial position
+                -> [Int]    -- ^ The rings
                 -> [Char]   -- ^ The UKW rotor
                 -> Char     -- ^ The encrypted result
-applyRotorBlock letter rotors rotations rings ukw = (applyBackward . applyUkw . applyForward) letter
-  where modifiedRotors= zipWith rotateRotor (zipWith (+) rotations rings) rotors
+applyRotorBlock letter rotors rotations initial rings ukw = (applyBackward . applyUkw . applyForward) letter
+  where actualRotations = zipWith (-) rotations rings
+        modifiedRotors = zipWith rotateRotor (zipWith (+) actualRotations initial) rotors
         applyForward letter = applyRotors letter modifiedRotors 
         applyUkw letter = applyRotor letter ukw
         applyBackward letter = applyRotors letter $ reverse (map reverseRotor modifiedRotors)
@@ -87,11 +94,12 @@ applyRotorBlock letter rotors rotations rings ukw = (applyBackward . applyUkw . 
 -- | Encrypt text in the rotor block
 encryptTextInRotorBlock :: [Char]          -- ^ The input text
             -> [([Char], Int)] -- ^ The rotors
-            -> [Int]           -- ^ The ring position
+            -> [Int]           -- ^ The initial position
+            -> [Int]           -- ^ The rings
             -> [Char]          -- ^ The UKW rotor
             -> [Char]          -- ^ The encrypted result
-encryptTextInRotorBlock text rotors rings ukw = zipWith encryptNextLetter preparedText [1..length text]
-  where encryptNextLetter letter position = applyRotorBlock letter rotorEncodings (calculateRotorPositions position) rings ukw
+encryptTextInRotorBlock text rotors initial rings ukw = zipWith encryptNextLetter preparedText [1..length text]
+  where encryptNextLetter letter position = applyRotorBlock letter rotorEncodings (calculateRotorPositions position) initial rings ukw
         preparedText = filter (\a -> elem a ['A'..'Z']) $ map toUpper text
         rotorEncodings = map fst rotors
         rotorPositionChange pos rotorPos
@@ -103,9 +111,10 @@ encryptTextInRotorBlock text rotors rings ukw = zipWith encryptNextLetter prepar
 
 main :: IO ()
 main = putStrLn $ show $ encryptedText
-  where encryptedText = encryptTextInRotorBlock plaintext rotorConfig ringConfig ukw
+  where encryptedText = encryptTextInRotorBlock plaintext rotorConfig initialRotation rings ukw
         plaintext = "THISISATEST"
-        -- expected: ZPJJSVSPGBW
+        -- expected: cglltficygb
         rotorConfig = [rotorI, rotorII, rotorIII]
-        ringConfig = [0, 0, 0]
+        initialRotation = startWith1 [4, 7, 1]
+        rings = startWith1 [2, 4, 8]
         ukw = ukwB
