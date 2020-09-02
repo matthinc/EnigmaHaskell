@@ -133,11 +133,11 @@ runEnigma text rotors initial rings ukw plugboardPerm = plugboard outputFromRoto
 
 main :: IO ()
 main = putStrLn $ show $ encryptedText
-  where encryptedText = runEnigma plaintext rotorConfig initialRotation rings ukw plubgoardConfig
+  where encryptedText = runEnigma plaintext rotorConfig (startWith1 initialRotation) (startWith1 rings) ukw plubgoardConfig
         plaintext = "THISISATEST"
         -- expected: SGLKAHGLWKL
         rotorConfig = [rotorI, rotorII, rotorIII]
-        initialRotation = startWith1 [4, 7, 1]
-        rings = startWith1 [2, 4, 8]
+        initialRotation = [4, 7, 1]
+        rings = [2, 4, 8]
         ukw = ukwB
         plubgoardConfig = [('T', 'A'), ('S', 'E'), ('M', 'K')]
