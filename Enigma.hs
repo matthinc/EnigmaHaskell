@@ -39,7 +39,7 @@ ukwB = "YRUHQSLDPXNGOKMIEBFZCWVJAT"
 
 -- | Returns position of letter in a char-array
 findPositionOfLetterInList :: Char -> [Char] -> Int
-findPositionOfLetterInList letter arr = fromMaybe (-1) (findIndex (\a -> a == letter) arr)
+findPositionOfLetterInList letter arr = fromMaybe (-1) $ findIndex (== letter) arr
 
 -- | Reverses a 'rotor' permutation
 -- Example: Input: a -> c, b -> d
@@ -49,10 +49,10 @@ findPositionOfLetterInList letter arr = fromMaybe (-1) (findIndex (\a -> a == le
 -- 1) if position is 0, search for alphabet[0] == a in rotor
 -- 2) Take this position and lookup letter at this position in the alphabet
 -- 3) Insert this letter at position 0 in the new rotor
--- Execute the steps 1-3 for every index [0..((length alphabet) - 1)]
+-- Execute the steps 1-3 for every index [0..(length alphabet) - 1]
 -- Start with an empty sequence
 reverseRotor :: [Char] -> [Char]
-reverseRotor r = toList $ foldl processPosition empty [0..((length alphabet) - 1)]
+reverseRotor r = toList $ foldl processPosition empty [0..length alphabet - 1]
   where processPosition newRotor position = let posOfLetter = findPositionOfLetterInList (alphabet !! position) r
                                                 alphaLetterAtPos = alphabet !! posOfLetter in
                                               insertAt position alphaLetterAtPos newRotor
@@ -79,7 +79,7 @@ applyRotorBlock :: Char     -- ^ The input letter
                 -> [Char]   -- ^ The UKW rotor
                 -> Char     -- ^ The encrypted result
 applyRotorBlock letter rotors rotations rings ukw = (applyBackward . applyUkw . applyForward) letter
-  where modifiedRotors= zipWith (\a b -> rotateRotor b a) rotors (zipWith (+) rotations rings)
+  where modifiedRotors= zipWith rotateRotor (zipWith (+) rotations rings) rotors
         applyForward letter = applyRotors letter modifiedRotors 
         applyUkw letter = applyRotor letter ukw
         applyBackward letter = applyRotors letter $ reverse (map reverseRotor modifiedRotors)
@@ -90,15 +90,16 @@ encryptTextInRotorBlock :: [Char]          -- ^ The input text
             -> [Int]           -- ^ The ring position
             -> [Char]          -- ^ The UKW rotor
             -> [Char]          -- ^ The encrypted result
-encryptTextInRotorBlock text rotors rings ukw = zipWith encryptNextLetter (prepareText text) [1..((length text))]
+encryptTextInRotorBlock text rotors rings ukw = zipWith encryptNextLetter preparedText [1..length text]
   where encryptNextLetter letter position = applyRotorBlock letter rotorEncodings (calculateRotorPositions position) rings ukw
-        prepareText text = filter (\a -> elem a ['A'..'Z']) (map toUpper text)
+        preparedText = filter (\a -> elem a ['A'..'Z']) $ map toUpper text
         rotorEncodings = map fst rotors
         rotorPositionChange pos rotorPos
           | (rotorPos !! 1) == (snd (rotors !! 1)) = [1, 1, 1]
           | (rotorPos !! 0) == (snd (rotors !! 0)) = [1, 1, 0]
           | otherwise                              = [1, 0, 0]
-        calculateRotorPositions max = foldl (\a b -> zipWith (+) a (rotorPositionChange b a)) [0, 0, 0] [1..max]
+        calculateRotorPositions max = foldl applyPositionChangeToPosition [0, 0, 0] [1..max]
+        applyPositionChangeToPosition position change = zipWith (+) position (rotorPositionChange change position)
 
 main :: IO ()
 main = putStrLn $ show $ encryptedText
