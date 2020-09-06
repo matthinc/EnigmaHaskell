@@ -9,29 +9,34 @@ import Data.Sequence (empty, insertAt)
 import Data.Foldable (toList)
 import Data.Char (toUpper)
 import Data.List.Split (chunksOf)
+import Text.ParserCombinators.Parsec
+import System.Environment (getArgs)
+import Data.Either
+  
+type Rotor = ([Char], Int)
 
 -- | Just the alphabet (Uppercase only)
 alphabet :: [Char]
 alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 -- | Rotor 1
-rotorI     :: ([Char], Int) -- ^ Encoding and turnover position
+rotorI     :: Rotor -- ^ Encoding and turnover position
 rotorI =   ("EKMFLGDQVZNTOWYHXUSPAIBRCJ", 17)
 
 -- | Rotor 2
-rotorII    :: ([Char], Int) -- ^ Encoding and turnover position
+rotorII    :: Rotor -- ^ Encoding and turnover position
 rotorII =  ("AJDKSIRUXBLHWTMCQGZNPYFVOE", 5)
 
 -- | Rotor 3
-rotorIII   :: ([Char], Int) -- ^ Encoding and turnover position
+rotorIII   :: Rotor -- ^ Encoding and turnover position
 rotorIII = ("BDFHJLCPRTXVZNYEIWGAKMUSQO", 22)
 
 -- | Rotor 4
-rotorIV    :: ([Char], Int) -- ^ Encoding and turnover position
+rotorIV    :: Rotor -- ^ Encoding and turnover position
 rotorIV =  ("ESOVPZJAYQUIRHXLNFTGKDCMWB", 10)
 
 -- | Rotor 5
-rotorV     :: ([Char], Int) -- ^ Encoding and turnover position
+rotorV     :: Rotor -- ^ Encoding and turnover position
 rotorV =   ("VZBRGITYUPSDNHLXAWMJQOFECK", 26)
 
 -- | UkwB "Umkehrwalze B" (reflector)
@@ -91,7 +96,7 @@ applyRotorBlock letter rotors rotations ukw = (applyBackward . applyUkw . applyF
 
 -- | Encrypt text in the rotor block
 encryptTextInRotorBlock :: [Char] -- ^ The input text
-            -> [([Char], Int)]    -- ^ The rotors
+            -> [Rotor]            -- ^ The rotors
             -> [Int]              -- ^ The initial position
             -> [Int]              -- ^ The rings
             -> [Char]             -- ^ The UKW rotor
@@ -122,7 +127,7 @@ plugboard text permutations = map applyAllPermutations text
 
 -- | Runs the enigma machine for a given text
 runEnigma :: [Char]            -- ^ The input text
-          -> [([Char], Int)]   -- ^ The rotors
+          -> [Rotor]           -- ^ The rotors
           -> [Int]             -- ^ The initial position
           -> [Int]             -- ^ The rings
           -> [Char]            -- ^ The UKW rotor
@@ -137,16 +142,93 @@ formatOutput :: [Char] -> [Char]
 formatOutput text = take (length partitionedResult - 1) partitionedResult
   where partitionedResult = foldl (\a b -> a ++ b ++ " ") "" $ chunksOf 5 text
 
+--------------- Argument parsing ---------------
+
+parseRotors :: Parser [Rotor]
+parseRotors = do
+  rotor1 <- rotor
+  char ','
+  rotor2 <- rotor
+  char ','
+  rotor3 <- rotor
+  return [rotor1, rotor2, rotor3]
+  where rotor = (do
+                  try (do
+                    string "III"
+                    pure rotorIII)
+                  <|>
+                  try (do
+                    string "II"
+                    pure rotorII)
+                  <|>
+                  try (do
+                    string "IV"
+                    pure rotorIV)
+                  <|>
+                  try (do
+                    string "I"
+                    pure rotorI)
+                  <|>
+                  try (do
+                    string "V"
+                    pure rotorV))
+
+parseRingsAndGrundstellung :: Parser [Int]
+parseRingsAndGrundstellung = do
+  n1 <- number
+  char ','
+  n2 <- number
+  char ','
+  n3 <- number
+  return [n1, n2, n3]
+  where number = (do
+                   value <- read <$> many1 digit
+                   pure value)
+
+parsePlugboard :: Parser [(Char, Char)]
+parsePlugboard = do
+  plugs <- many plug
+  return plugs
+  where plug = (do
+                 c1 <- upper
+                 c2 <- upper
+                 spaces
+                 pure (c1, c2))
+
+parseConfig :: Parser ([Rotor], [Int], [Int], [(Char, Char)])
+parseConfig = do
+  rotors <- parseRotors
+  spaces
+  grundstellung <- parseRingsAndGrundstellung
+  spaces
+  rings <- parseRingsAndGrundstellung
+  spaces
+  plugboard <- parsePlugboard
+  return (rotors, grundstellung, rings, plugboard)
+
+--------------- Main ---------------
+
 main :: IO ()
-main = putStrLn $ show $ formatOutput encryptedText
-  where encryptedText = runEnigma plaintext rotorConfig initialRotation rings ukw plubgoardConfig
-        -- Example taken from https://de.wikipedia.org/wiki/Enigma_(Maschine)#Bedienung
-        -- "Das Oberkommando der Wehrmacht gibt bekannt: Aachen ist gerettet."
-        plaintext = "DASOBERKOMMANDODERWEHRMAQTGIBTBEKANNTXAACHENXAACHENXISTGERETTET"
-        rotorConfig = [rotorI, rotorIV, rotorIII]
-        --  A  B  C  D  E  F  G  H  I  J  K  L  M  N  O  P  Q  R  S  T  U  V  W  X  Y  Z
-        -- 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26
-        initialRotation = [18, 20, 26]
-        rings = [16, 26, 8]
-        ukw = ukwB
-        plubgoardConfig = [('A', 'D'), ('C', 'N'), ('E', 'T'), ('F', 'L'), ('G', 'I'), ('J', 'V'), ('K', 'Z'), ('P', 'U'), ('Q', 'Y'), ('W', 'X')]
+main = do
+  args <- getArgs
+
+  let (rotors, grundstellung, rings, plugboard) = parsedArgs args in
+    putStrLn $ show $ formatOutput $ runEnigma (args !! 1) rotors grundstellung rings ukwB plugboard
+
+
+  where parsedArgs args = case parse parseConfig "" (args !! 0) of
+          Right arg -> arg
+          Left err  -> error $ show err
+  
+-- main = putStrLn $ show $ formatOutput encryptedText
+--   where encryptedText = runEnigma plaintext rotorConfig initialRotation rings ukw plubgoardConfig
+--         -- Example taken from https://de.wikipedia.org/wiki/Enigma_(Maschine)#Bedienung
+--         -- "Das Oberkommando der Wehrmacht gibt bekannt: Aachen ist gerettet."
+--         plaintext = "DASOBERKOMMANDODERWEHRMAQTGIBTBEKANNTXAACHENXAACHENXISTGERETTET"
+--         rotorConfig = [rotorI, rotorIV, rotorIII]
+--         --  A  B  C  D  E  F  G  H  I  J  K  L  M  N  O  P  Q  R  S  T  U  V  W  X  Y  Z
+--         -- 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26
+--         initialRotation = [18, 20, 26]
+--         rings = [16, 26, 8]
+--         ukw = ukwB
+--         plubgoardConfig = [('A', 'D'), ('C', 'N'), ('E', 'T'), ('F', 'L'), ('G', 'I'), ('J', 'V'), ('K', 'Z'), ('P', 'U'), ('Q', 'Y'), ('W', 'X')]
