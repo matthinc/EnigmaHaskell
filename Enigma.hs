@@ -8,6 +8,7 @@ import Data.List
 import Data.Sequence (empty, insertAt)
 import Data.Foldable (toList)
 import Data.Char (toUpper)
+import Data.List.Split (chunksOf)
 
 -- | Just the alphabet (Uppercase only)
 alphabet :: [Char]
@@ -80,13 +81,10 @@ startWith1 arr = zipWith (-) arr (cycle [1])
 applyRotorBlock :: Char     -- ^ The input letter
                 -> [[Char]] -- ^ The rotors
                 -> [Int]    -- ^ The rotation
-                -> [Int]    -- ^ The initial position
-                -> [Int]    -- ^ The rings
                 -> [Char]   -- ^ The UKW rotor
                 -> Char     -- ^ The encrypted result
-applyRotorBlock letter rotors rotations initial rings ukw = (applyBackward . applyUkw . applyForward) letter
-  where actualRotations = zipWith (-) rotations rings
-        modifiedRotors = zipWith rotateRotor (zipWith (+) actualRotations initial) rotors
+applyRotorBlock letter rotors rotations ukw = (applyBackward . applyUkw . applyForward) letter
+  where modifiedRotors = zipWith rotateRotor rotations rotors
         applyForward letter = applyRotors letter modifiedRotors 
         applyUkw letter = applyRotor letter ukw
         applyBackward letter = applyRotors letter $ reverse (map reverseRotor modifiedRotors)
@@ -99,15 +97,17 @@ encryptTextInRotorBlock :: [Char] -- ^ The input text
             -> [Char]             -- ^ The UKW rotor
             -> [Char]             -- ^ The encrypted result
 encryptTextInRotorBlock text rotors initial rings ukw = zipWith encryptNextLetter preparedText [1..length text]
-  where encryptNextLetter letter position = applyRotorBlock letter rotorEncodings (calculateRotorPositions position) initial rings ukw
+  where encryptNextLetter letter n = applyRotorBlock letter rotorEncodings (calculateRotorPositions n) ukw
         preparedText = filter (\a -> elem a ['A'..'Z']) $ map toUpper text
         rotorEncodings = map fst rotors
-        rotorPositionChange pos rotorPos
-          | (rotorPos !! 1) == (snd (rotors !! 1)) = [1, 1, 1]
-          | (rotorPos !! 0) == (snd (rotors !! 0)) = [1, 1, 0]
-          | otherwise                              = [1, 0, 0]
-        calculateRotorPositions max = foldl applyPositionChangeToPosition [0, 0, 0] [1..max]
-        applyPositionChangeToPosition position change = zipWith (+) position (rotorPositionChange change position)
+        initialRotorPositions = map (\a -> a `mod` 26) $ zipWith (-) initial rings
+        rotorPositionChange rotorPos index
+          | (visibleRings rotorPos) !! 1  == (snd (rotors !! 1)) = [1, 1, 1]
+          | (visibleRings rotorPos) !! 0  == (snd (rotors !! 0)) = [1, 1, 0]
+          | otherwise                                            = [1, 0, 0]
+        visibleRings rotorPos = map (\a -> a `mod` 26) $ zipWith (+) rings (zipWith (-) rotorPos initial)
+        calculateRotorPositions max = foldl applyPositionChangeToPosition initialRotorPositions [1..max]
+        applyPositionChangeToPosition position index = zipWith (+) position (rotorPositionChange position index)
 
 -- | Apply plugboard permutatios to a text
 plugboard :: [Char] -- ^ Input text
@@ -120,6 +120,7 @@ plugboard text permutations = map applyAllPermutations text
           | snd perm == char = fst perm
           | otherwise        = char
 
+-- | Runs the enigma machine for a given text
 runEnigma :: [Char]            -- ^ The input text
           -> [([Char], Int)]   -- ^ The rotors
           -> [Int]             -- ^ The initial position
@@ -128,16 +129,24 @@ runEnigma :: [Char]            -- ^ The input text
           -> [(Char, Char)]    -- ^ Plugboard setting
           -> [Char]            -- ^ The encrypted result
 runEnigma text rotors initial rings ukw plugboardPerm = plugboard outputFromRotors plugboardPerm
-  where outputFromRotors = encryptTextInRotorBlock pbText rotors initial rings ukw
+  where outputFromRotors = encryptTextInRotorBlock pbText (reverse $ rotors) (reverse $ startWith1 initial) (reverse $ startWith1 rings) ukw
         pbText = plugboard text plugboardPerm
 
+-- | ABCDEFGHIJKL -> ABCDE FGHIJ KL
+formatOutput :: [Char] -> [Char]
+formatOutput text = take (length partitionedResult - 1) partitionedResult
+  where partitionedResult = foldl (\a b -> a ++ b ++ " ") "" $ chunksOf 5 text
+
 main :: IO ()
-main = putStrLn $ show $ encryptedText
-  where encryptedText = runEnigma plaintext rotorConfig (startWith1 initialRotation) (startWith1 rings) ukw plubgoardConfig
-        plaintext = "THISISATEST"
-        -- expected: SGLKAHGLWKL
-        rotorConfig = [rotorI, rotorII, rotorIII]
-        initialRotation = [4, 7, 1]
-        rings = [2, 4, 8]
+main = putStrLn $ show $ formatOutput encryptedText
+  where encryptedText = runEnigma plaintext rotorConfig initialRotation rings ukw plubgoardConfig
+        -- Example taken from https://de.wikipedia.org/wiki/Enigma_(Maschine)#Bedienung
+        -- "Das Oberkommando der Wehrmacht gibt bekannt: Aachen ist gerettet."
+        plaintext = "DASOBERKOMMANDODERWEHRMAQTGIBTBEKANNTXAACHENXAACHENXISTGERETTET"
+        rotorConfig = [rotorI, rotorIV, rotorIII]
+        --  A  B  C  D  E  F  G  H  I  J  K  L  M  N  O  P  Q  R  S  T  U  V  W  X  Y  Z
+        -- 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26
+        initialRotation = [18, 20, 26]
+        rings = [16, 26, 8]
         ukw = ukwB
-        plubgoardConfig = [('T', 'A'), ('S', 'E'), ('M', 'K')]
+        plubgoardConfig = [('A', 'D'), ('C', 'N'), ('E', 'T'), ('F', 'L'), ('G', 'I'), ('J', 'V'), ('K', 'Z'), ('P', 'U'), ('Q', 'Y'), ('W', 'X')]
